@@ -2,8 +2,12 @@ from flask import Flask, request, jsonify
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA
 import os 
+from cloud_group import database_bp
 
 app = Flask(__name__)
+
+#add blueprints 
+app.register_blueprint(database_bp)
 
 @app.route('/encrypt_file', methods=['POST'])
 def encrypt_file(input_file, output_file):
@@ -84,14 +88,16 @@ def decrypt_file():
         if not key or not iv:
             return jsonify({"error": "Missing key or IV"}), 400
         
+        #decrypt aes key
+        decrypted_aes = decryptAES(key)
 
-        decoded_key = bytes.fromhex(key)
+        # decoded_key = bytes.fromhex(key)
         decoded_iv = bytes.fromhex(iv)
 
-        if len(decoded_key) != 32:
+        if len(decrypted_aes) != 32:
             return jsonify({"message": "Incorrect length for AES key"}), 400
 
-        cipher = AES.new(decoded_key, AES.MODE_CBC, decoded_iv)
+        cipher = AES.new(decrypted_aes, AES.MODE_CBC, decoded_iv)
 
         with open(input_file, "rb") as f:
             ciphertext = f.read()
