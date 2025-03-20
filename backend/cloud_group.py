@@ -39,8 +39,7 @@ def add_group():
     group_id = cursor.fetchone()[0]  # Retrieve the newly inserted group_id
     conn.commit()
     cursor.close()
-    conn.close() 
-    return jsonify({"user_id":group_id}), 200
+    return jsonify({"group_id":group_id}), 200
 
 # Function to add a user
 @database_bp.route("/add-user", methods = ['POST'])
@@ -67,19 +66,53 @@ def add_user():
     user_id = cursor.fetchone()[0]  # Retrieve the new user ID
     conn.commit()
     cursor.close()
-    conn.close() 
     return jsonify({"user_id":user_id}), 200
 
-#TODO:remove user from group 
+#remove user from group 
+@database_bp.route('/remove-user', methods = ['POST'])
+def remove_user():
+    cursor = conn.cursor()
+    data = request.json
+    f_name = data['fname']
+    l_name = data['lname']
+    # retrieve user id 
+    cursor.execute("SELECT id FROM users WHERE first_name = %s AND last_name = %s", (f_name, l_name))
+    result = cursor.fetchone()
+    if result: 
+        #remove from db 
+        cursor.execute("DELETE FROM users WHERE id = %s", result)
+        conn.commit()
+        cursor.close()
+        return jsonify({"message":"User successfully deleted"}), 200
+    else:
+        cursor.close()
+        return jsonify({"message": "ERROR: No user found"}), 400 
+    
 
-#TODO:remove group from database 
+#remove group from database 
+@database_bp.route('/remove-group', methods = ['POST'])
+def remove_group():
+    cursor = conn.cursor()
+    data = request.json
+    g_name = data['name']
+    cursor.execute("SELECT group_id FROM cloudGroups WHERE group_name = %s", (g_name, ))
+    result = cursor.fetchone()
 
+    if result: 
+        #remove from db 
+        cursor.execute("DELETE FROM cloudGroups WHERE group_id = %s", result)
+        conn.commit()
+        cursor.close()
+        return jsonify({"message":"Group successfully deleted"}), 200
+    else:
+        cursor.close()
+        return jsonify({"message": "ERROR: No group found"}), 400
 
 #function to check if user in a group
 def is_in_group(first_name, last_name, group_name):
     cursor = conn.cursor()
     # Retrieve group_id
-    cursor.execute("SELECT group_id FROM cloudGroups WHERE group_name = %s", (group_name,))
+    cursor.execute("SELECT group_id FROM cloudGroups WHERE group_name = %s", (group_name, ))
     result = cursor.fetchone()
 
     if result:
@@ -90,7 +123,6 @@ def is_in_group(first_name, last_name, group_name):
 
     cursor.execute("SELECT * FROM users WHERE first_name = %s AND last_name = %s AND group_id = %s", first_name, last_name, group_id)
     cursor.close()
-    conn.close() 
     return cursor.fetchone() is not None
     
 
