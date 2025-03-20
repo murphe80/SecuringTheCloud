@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-from cloud_group import database_bp
-from drive import drive_bp
+from backend.database.cloud_group import database_bp
+from backend.google_drive.drive import drive_bp
 
 app = Flask(__name__)
 
