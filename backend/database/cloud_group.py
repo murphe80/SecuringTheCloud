@@ -1,5 +1,6 @@
 import psycopg2
 from flask import Flask, Blueprint, request, jsonify
+import encryption
 
 #create blueprint 
 database_bp = Blueprint("database_bp", __name__)
@@ -17,13 +18,15 @@ cursor = conn.cursor()
 #initialise tables 
 cursor.execute("""CREATE TABLE IF NOT EXISTS cloudGroups(
                group_id SERIAL PRIMARY KEY,
-               group_name VARCHAR(255)
+               group_name VARCHAR(255),
+               public_key TEXT
                 );""")
 
 cursor.execute("""CREATE TABLE IF NOT EXISTS users (
                id SERIAL PRIMARY KEY,
                first_name VARCHAR(255),
                last_name VARCHAR(255),
+               public_key TEXT,
                group_id INT,
                CONSTRAINT group_num FOREIGN KEY(group_id) REFERENCES cloudGroups(group_id)
                );""")
@@ -35,7 +38,11 @@ def add_group():
     cursor = conn.cursor()
     data = request.json
     group_name = data['group_name']
-    cursor.execute("INSERT INTO cloudGroups (group_name) VALUES (%s) RETURNING group_id", (group_name,))
+
+    # Generate key pair for group
+    public_key = encryption.generateKeyPair("group_private")
+
+    cursor.execute("INSERT INTO cloudGroups (group_name, public_key) VALUES (%s, %s) RETURNING group_id", (group_name,public_key))
     group_id = cursor.fetchone()[0]  # Retrieve the newly inserted group_id
     conn.commit()
     cursor.close()
@@ -50,6 +57,7 @@ def add_user():
     last_name = data['last_name']
     group_name = data['group_name']
 
+
     # Retrieve group_id
     cursor.execute("SELECT group_id FROM cloudGroups WHERE group_name = %s", (group_name,))
     result = cursor.fetchone()
@@ -59,10 +67,14 @@ def add_user():
     else:
         print("Error: Group not found.")
         return jsonify({"message":"False"}), 400
+    
+    # Generate key pair
+    public_key = encryption.generateKeyPair("user_private")
+
 
     # Insert user with auto-increment ID
-    cursor.execute("INSERT INTO users (first_name, last_name, group_id) VALUES (%s, %s, %s) RETURNING id",
-                   (first_name, last_name, group_id))
+    cursor.execute("INSERT INTO users (first_name, last_name, public_key, group_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                   (first_name, last_name, public_key, group_id))
     user_id = cursor.fetchone()[0]  # Retrieve the new user ID
     conn.commit()
     cursor.close()
@@ -121,8 +133,30 @@ def is_in_group(first_name, last_name, group_name):
         print("Error: Group not found.")
         return False
 
-    cursor.execute("SELECT * FROM users WHERE first_name = %s AND last_name = %s AND group_id = %s", first_name, last_name, group_id)
+    cursor.execute("SELECT * FROM users WHERE first_name = %s AND last_name = %s AND group_id = %s", (first_name, last_name, group_id))
+    in_group = cursor.fetchone() is not None
     cursor.close()
-    return cursor.fetchone() is not None
-    
+    return in_group
 
+def group_exists(group_name):
+    cursor = conn.cursor()
+    cursor.execute("SELECT group_id FROM cloudGroups WHERE group_name = %s", (group_name, ))
+    result = cursor.fetchone()
+    cursor.close()
+    if result:
+        return True
+    else:
+        return False
+    
+def retrieve_group_PK(group_name):
+    cursor = conn.cursor()
+    # Retrieve group_id
+    cursor.execute("SELECT public_key FROM cloudGroups WHERE group_name = %s", (group_name, ))
+    result = cursor.fetchone()
+
+    if result:
+        group_pk = result[0]
+        return group_pk
+    else:
+        print("Error: Group not found.")
+        return False

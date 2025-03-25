@@ -4,6 +4,8 @@ from httplib2 import Http
 from oauth2client import file, client, tools
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import io
+from database.cloud_group import is_in_group, group_exists
+from encryption import encrypt_file, decrypt_file
 
 # Make blueprint
 drive_bp = Blueprint("drive_bp", __name__) 
@@ -26,12 +28,30 @@ def upload_file():
     
     file_name = data['file_name']
     file_contents = data['contents']
+    first_name = data['fname']
+    last_name = data['lname']
+    group_name = data['group_name']
     
     try:
-        file_metadata = {"name": file_name}
-        file_stream = io.BytesIO(file_contents.encode('utf-8'))
+        #Check group exists
+        print("Checking group exists...")
+        if not group_exists(group_name):
+            return jsonify({"message":"ERROR: Group does not exist"}), 400
+        #Check user is in group 
+        print("Checking in user group...")
+        if not is_in_group(first_name, last_name, group_name):
+            return jsonify({"message":"ERROR: user not in group"}), 400
 
-        #TODO: encrypt file 
+        #Encrypt file 
+        print("Encrypting file...")
+        encrypt_file(file_contents, "result.txt", group_name)
+
+        #Open encrypted file 
+        with open("result.txt", "rb")  as f:
+            encrypted_contents = f.read()
+
+        file_metadata = {"name": file_name}
+        file_stream = io.BytesIO(encrypted_contents)
 
         media = MediaIoBaseUpload(file_stream, mimetype="application/octet-stream")
         file = (
@@ -52,6 +72,10 @@ def download_file():
     data = request.json
     name = data['file_name']
     file_id = data['file_id']
+    first_name = data['fname']
+    last_name = data['lname']
+    group_name = data['group_name']
+
     #retrieve file from drive
     try:
         download_request = DRIVE.files().get_media(fileId=file_id)
@@ -61,6 +85,10 @@ def download_file():
         while complete is False:
             status, complete = downloader.next_chunk()
             print(f"Download {int(status.progress() * 100)}.")
+        
+        #check user is in group 
+        if not is_in_group(first_name, last_name, group_name):
+            return jsonify({"message":"ERROR: user not in group"}), 400
             
         #TODO: decrypt file 
 
