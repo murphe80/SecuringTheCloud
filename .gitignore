@@ -1,3 +1,5 @@
 venv
-backend/database/credentials.json
-backend/database/storage.json
+backend/credentials.json
+backend/storage.json
+backend/user_private.pem
+backend/group_private.pem
