@@ -1,12 +1,13 @@
+import base64
 from flask import Flask, request, jsonify, Blueprint
 from googleapiclient import discovery
 from httplib2 import Http
 from oauth2client import file, client, tools
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import io
-from database.cloud_group import is_in_group, group_exists
+from database.cloud_group import is_in_group, group_exists, retrieve_group_key, retrieve_encrypted_aes, retrieve_iv
 from encryption import encrypt_file, decrypt_file
-
+import json
 # Make blueprint
 drive_bp = Blueprint("drive_bp", __name__) 
 
@@ -44,15 +45,21 @@ def upload_file():
 
         #Encrypt file 
         print("Encrypting file...")
-        encrypt_file(file_contents, "result.txt", group_name)
+        #Retrieve group's aes key 
+        key, iv = retrieve_group_key(group_name)
+
+        db_file_id = encrypt_file(file_contents, "encrypted.txt", group_name, key, iv) 
+        print(db_file_id)
+        print("Successfully encrypted file")
 
         #Open encrypted file 
-        with open("result.txt", "rb")  as f:
+        with open("encrypted.txt", "rb")  as f:
             encrypted_contents = f.read()
 
+        # metadata
         file_metadata = {"name": file_name}
-        file_stream = io.BytesIO(encrypted_contents)
 
+        file_stream = io.BytesIO(encrypted_contents)
         media = MediaIoBaseUpload(file_stream, mimetype="application/octet-stream")
         file = (
             DRIVE.files()
@@ -61,7 +68,8 @@ def upload_file():
         )
         return jsonify({
             "message": "Successfully uploaded file",
-            "file_id": file['id']
+            "drive_file_id": file['id'],
+            "db_file_id": db_file_id
         }), 200
     except Exception as e:
         return jsonify({"message": f"ERROR: Cannot upload file : {e}"}), 400
@@ -72,8 +80,10 @@ def download_file():
     data = request.json
     name = data['file_name']
     file_id = data['file_id']
+    db_file_id = data['db_file_id']
     first_name = data['fname']
     last_name = data['lname']
+    user_id = data['user_id']
     group_name = data['group_name']
 
     #retrieve file from drive
@@ -85,13 +95,23 @@ def download_file():
         while complete is False:
             status, complete = downloader.next_chunk()
             print(f"Download {int(status.progress() * 100)}.")
+        file_contents = file.getvalue()
+
+        #check group exists
+        if not group_exists(group_name):
+            return jsonify({"message":"ERROR: group does not exist"}), 400
         
         #check user is in group 
         if not is_in_group(first_name, last_name, group_name):
-            return jsonify({"message":"ERROR: user not in group"}), 400
-            
-        #TODO: decrypt file 
+            return jsonify({"message":"User not in group", "Encrypted file": file_contents.decode('latin-1')}), 200
 
-        return file.getvalue()
+        print("Decrypting file...")
+        iv = retrieve_iv(group_name)
+        decrypt_file(file_contents, "decrypted.txt", db_file_id, user_id, iv)
+
+        with open("decrypted.txt", "r") as f:
+            contents = f.read()
+
+        return jsonify({"message":"file_decrypted", "contents":contents}), 200
     except Exception as e:
         return jsonify({"message": f"ERROR: Cannot download file : {e}"}), 400
